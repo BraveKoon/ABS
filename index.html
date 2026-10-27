@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABS 로봇 심판 - 탁구공 추적</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#171c24; --line:#2a3240; --text:#e8edf4; --muted:#8a96a8;
+    --accent:#ff8a1f; --strike:#ff4d4d; --ball:#3ddc84; --cyan:#00e5ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","Noto Sans KR",sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0}
+  header span{color:var(--muted);font-size:13px}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;padding:16px;max-width:1320px;margin:0 auto}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .stage{position:relative;background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+  canvas#view{display:block;width:100%;height:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+  canvas#view.free{touch-action:auto}
+  .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--muted);line-height:1.6;background:rgba(0,0,0,.6)}
+  .msg button{margin-top:12px}
+  button{background:var(--accent);color:#1a1000;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:14px;min-height:40px}
+  button.sub{background:#263041;color:var(--text);font-weight:600}
+  button.on{background:var(--accent);color:#1a1000}
+  button:hover{filter:brightness(1.1)}
+  h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;letter-spacing:.04em}
+  .count{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+  .count div{background:#10151c;border:1px solid var(--line);border-radius:10px;padding:8px 4px}
+  .count b{display:block;font-size:28px;line-height:1.1}
+  .count small{color:var(--muted);font-size:12px}
+  .last{margin-top:10px;text-align:center;font-size:26px;font-weight:800;min-height:38px}
+  .last.strike{color:var(--strike)} .last.ball{color:var(--ball)}
+  .row{display:grid;grid-template-columns:84px 1fr 48px;align-items:center;gap:8px;margin:8px 0;font-size:13px}
+  .row label{color:var(--muted)} .row output{text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);height:28px}
+  select{width:100%;background:#10151c;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px}
+  .chk{display:flex;gap:8px;align-items:center;font-size:13px;margin:8px 0;color:var(--text)}
+  .chk input{width:18px;height:18px}
+  .stack{display:flex;flex-direction:column;gap:14px}
+  canvas#chart{width:100%;background:#10151c;border-radius:10px;border:1px solid var(--line)}
+  #log{max-height:150px;overflow:auto;font-size:12px;color:var(--muted);line-height:1.7}
+  #log .s{color:var(--strike)} #log .b{color:var(--ball)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  .hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:8px}
+  .modebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .status{flex:1 1 220px;font-size:13px;color:var(--text);background:#10151c;border:1px solid var(--line);border-radius:8px;padding:9px 12px;line-height:1.5;min-height:40px}
+  .status.pick{border-color:var(--cyan);color:var(--cyan)}
+  .colorTop{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .bigsw{width:54px;height:54px;border-radius:50%;border:3px solid #fff3;flex:none;box-shadow:inset 0 0 0 2px #0006}
+  .colorTop .t{flex:1;font-size:13px;line-height:1.5}
+  .colorTop .t b{font-size:15px}
+  input[type=color]{width:56px;height:40px;border:1px solid var(--line);border-radius:8px;background:#10151c;padding:2px;cursor:pointer}
+  .presets{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 4px}
+  .presets button{width:40px;height:40px;min-height:0;padding:0;border-radius:50%;border:3px solid #fff2;position:relative}
+  .presets button.sel{border-color:#fff}
+  .presets button span{position:absolute;left:50%;top:100%;transform:translateX(-50%);font-size:10px;color:var(--muted);font-weight:500;margin-top:2px;white-space:nowrap}
+  .presets{margin-bottom:22px}
+  #hc{background:linear-gradient(90deg,#f00,#ff0 17%,#0f0 33%,#0ff 50%,#00f 67%,#f0f 83%,#f00);border-radius:6px;height:14px;-webkit-appearance:none;appearance:none}
+  #hc::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:26px;border-radius:6px;background:#fff;border:2px solid #000}
+  #hc::-moz-range-thumb{width:20px;height:24px;border-radius:6px;background:#fff;border:2px solid #000}
+  @media (pointer:coarse){
+    button{min-height:46px} input[type=range]{height:34px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚾ ABS 로봇 심판</h1>
+  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다</span>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="stage">
+      <canvas id="view" width="640" height="480"></canvas>
+      <div class="msg" id="startMsg">
+        <div>
+          카메라 권한이 필요합니다.<br>
+          카메라를 <b>포수 뒤(또는 타자 옆)에서 스트라이크존 쪽</b>을 향하게 놓고,<br>
+          탁구공을 던져 보세요.<br>
+          <button id="startBtn">카메라 시작</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modebar">
+      <button id="modeZone" class="on">🎯 존 조정</button>
+      <button id="modePick" class="sub">🎨 공 색 찍기</button>
+      <button id="modeDone" class="sub" style="display:none">완료</button>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="hint">
+      <b>존 조정</b>: 주황 박스를 끌어 이동 · 모서리/변의 점을 끌어 크기 변경 · 박스 밖을 드래그하면 새로 그림.<br>
+      <b>공 색 찍기</b>: 화면 속 공을 탭(밝은 곳·그늘진 곳 여러 번 탭할수록 정확). 오른쪽 패널에서 색을 직접 고를 수도 있습니다.<br>
+      공이 카메라 쪽으로 다가오며 커지다가 <b>판정 크기</b>에 닿는 순간 그 위치로 판정합니다(존에 조금이라도 걸치면 스트라이크).
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <h2>카운트</h2>
+      <div class="count">
+        <div><b id="cB">0</b><small>볼</small></div>
+        <div><b id="cS">0</b><small>스트라이크</small></div>
+        <div><b id="cO">0</b><small>아웃</small></div>
+      </div>
+      <div class="last" id="lastCall">—</div>
+      <div class="btns" style="margin-top:8px">
+        <button class="sub" id="resetBtn">카운트 초기화</button>
+        <button class="sub" id="debugBtn">마스크 보기</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>공 색 지정</h2>
+      <div class="colorTop">
+        <div class="bigsw" id="bigsw"></div>
+        <div class="t"><b id="hexTxt">#FF8A1F</b><br><span style="color:var(--muted)">현재 추적 중인 색</span></div>
+        <input type="color" id="colorIn" title="색 직접 선택">
+      </div>
+      <div class="presets" id="presets"></div>
+      <div class="row"><label>색상</label><input type="range" id="hc" min="0" max="360" value="27"><output id="hco"></output></div>
+      <div class="row"><label>허용 범위 ±</label><input type="range" id="ht" min="4" max="60" value="12"><output id="hto"></output></div>
+      <div class="row"><label>채도 최소</label><input type="range" id="smin" min="0" max="100" value="55"><output id="smino"></output></div>
+      <div class="row"><label>밝기 최소</label><input type="range" id="vmin" min="0" max="100" value="45"><output id="vmino"></output></div>
+      <div class="row"><label>판정 크기</label><input type="range" id="trig" min="1" max="15" step="0.5" value="4"><output id="trigo"></output></div>
+    </div>
+
+    <div class="panel">
+      <h2>스트라이크존 (수치 조정)</h2>
+      <div class="row"><label>가로 위치</label><input type="range" id="zx" min="0" max="95" step="0.5" value="35"><output id="zxo"></output></div>
+      <div class="row"><label>세로 위치</label><input type="range" id="zy" min="0" max="95" step="0.5" value="28"><output id="zyo"></output></div>
+      <div class="row"><label>너비</label><input type="range" id="zw" min="5" max="100" step="0.5" value="30"><output id="zwo"></output></div>
+      <div class="row"><label>높이</label><input type="range" id="zh" min="5" max="100" step="0.5" value="42"><output id="zho"></output></div>
+      <label class="chk"><input type="checkbox" id="lock"> 존 잠금 (실수로 안 움직이게)</label>
+      <div class="btns">
+        <button class="sub" id="zCenter">가운데로</button>
+        <button class="sub" id="zReset">존 초기화</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>투구 위치 (존 기준)</h2>
+      <canvas id="chart" width="320" height="300"></canvas>
+      <div id="log" style="margin-top:8px"></div>
+    </div>
+
+    <div class="panel">
+      <h2>옵션</h2>
+      <div style="margin-bottom:8px"><select id="camSel"></select></div>
+      <label class="chk"><input type="checkbox" id="mirror"> 좌우 반전(셀카 카메라)</label>
+      <label class="chk"><input type="checkbox" id="voice" checked> 음성 판정(“스트라이크!” / “볼!”)</label>
+      <label class="chk"><input type="checkbox" id="beep" checked> 효과음</label>
+      <div class="btns" style="margin-top:6px"><button class="sub" id="factory">모든 설정 초기화</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const view = $('view'), vctx = view.getContext('2d');
+  const proc = document.createElement('canvas'), pctx = proc.getContext('2d', {willReadFrequently:true});
+  const chart = $('chart'), cctx = chart.getContext('2d');
+  const video = document.createElement('video');
+  video.playsInline = true; video.muted = true;
+
+  const PW = 320;           // 처리용 가로 해상도
+  let PH = 240, stream = null, debug = false, running = false;
+  let mask = null, seen = null, stack = null;
+  const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+
+  // ---------- 기본값 (사진 속 주황 탁구공: 색상 ≈27°, 채도 65~100%, 밝기 80~95%) ----------
+  const DEFAULTS = { hc:27, ht:12, smin:55, vmin:45, trig:4, zx:35, zy:28, zw:30, zh:42 };
+  const UNIT = { hc:'°', ht:'°' };
+
+  // ---------- 슬라이더 ----------
+  const ctl = {};
+  ['hc','ht','smin','vmin','trig','zx','zy','zw','zh'].forEach(k => { ctl[k] = $(k); });
+  const val = k => parseFloat(ctl[k].value);
+  function setSlider(k, v) {
+    ctl[k].value = v;
+    $(k+'o').textContent = (Math.round(val(k)*10)/10) + (UNIT[k] || '%');
+  }
+  Object.keys(ctl).forEach(k => setSlider(k, val(k)));
+
+  // ---------- 설정 저장/불러오기 ----------
+  const KEY = 'abs-referee-v2';
+  const CHECKS = ['lock','mirror','voice','beep'];
+  function save() {
+    try {
+      const o = {};
+      Object.keys(ctl).forEach(k => o[k] = val(k));
+      CHECKS.forEach(k => o[k] = $(k).checked);
+      localStorage.setItem(KEY, JSON.stringify(o));
+    } catch(e) {}
+  }
+  function load() {
+    try {
+      const o = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!o) return;
+      Object.keys(ctl).forEach(k => { if (typeof o[k] === 'number') setSlider(k, o[k]); });
+      CHECKS.forEach(k => { if (typeof o[k] === 'boolean') $(k).checked = o[k]; });
+    } catch(e) {}
+  }
+
+  // ---------- 색 유틸 ----------
+  function rgb2hsv(r,g,b){
+    const mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx-mn;
+    let h = 0;
+    if (d) {
+      if (mx===r) h = 60*(((g-b)/d)%6);
+      else if (mx===g) h = 60*((b-r)/d+2);
+      else h = 60*((r-g)/d+4);
+      if (h<0) h+=360;
+    }
+    return [h, mx? d/mx : 0, mx/255];
+  }
+  function hsv2rgb(h,s,v){
+    const c = v*s, x = c*(1-Math.abs((h/60)%2-1)), m = v-c;
+    let r=0,g=0,b=0;
+    if (h<60){r=c;g=x} else if (h<120){r=x;g=c} else if (h<180){g=c;b=x}
+    else if (h<240){g=x;b=c} else if (h<300){r=x;b=c} else {r=c;b=x}
+    return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+  }
+  const hex2 = n => n.toString(16).padStart(2,'0');
+  const toHex = (r,g,b) => '#' + hex2(r) + hex2(g) + hex2(b);
+  const hueDiff = (a,b) => { const d = Math.abs(a-b) % 360; return d > 180 ? 360-d : d; };
+
+  function refreshColorUI() {
+    const [r,g,b] = hsv2rgb(val('hc'), 0.85, 1);
+    const hx = toHex(r,g,b);
+    $('bigsw').style.background = hx;
+    $('hexTxt').textContent = hx.toUpperCase();
+    $('colorIn').value = hx;
+    document.querySelectorAll('#presets button').forEach(btn => {
+      btn.classList.toggle('sel', hueDiff(+btn.dataset.h, val('hc')) <= 6);
+    });
+  }
+
+  // 프리셋
+  const PRESETS = [
+    ['주황',27],['노랑',52],['빨강',0],['분홍',330],['초록',120],['파랑',210]
+  ];
+  PRESETS.forEach(([name,h]) => {
+    const b = document.createElement('button');
+    b.dataset.h = h; b.title = name;
+    b.style.background = toHex(...hsv2rgb(h, 0.85, 1));
+    b.innerHTML = '<span>'+name+'</span>';
+    b.onclick = () => {
+      setSlider('hc', h); setSlider('ht', 12);
+      setSlider('smin', 50); setSlider('vmin', 40);
+      refreshColorUI(); save();
+    };
+    $('presets').appendChild(b);
+  });
+
+  ['hc','ht','smin','vmin','trig'].forEach(k => ctl[k].addEventListener('input', () => {
+    setSlider(k, val(k)); refreshColorUI(); save();
+  }));
+  $('colorIn').addEventListener('input', e => {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(e.target.value);
+    if (!m) return;
+    const [h,s,v] = rgb2hsv(parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16));
+    if (s < 0.15) { setStatus('너무 흐린(회색·흰색) 색이에요. 채도가 높은 색을 골라 주세요.'); return; }
+    setSlider('hc', Math.round(h));
+    setSlider('smin', clamp(Math.round(s*100*0.6), 20, 90));
+    setSlider('vmin', clamp(Math.round(v*100*0.5), 15, 90));
+    refreshColorUI(); save();
+  });
+
+  // ---------- 스트라이크존 (화면 비율 0~1) ----------
+  const zone = { x:.35, y:.28, w:.30, h:.42 };
+  const MIN = 0.05;
+  function setZone(x, y, w, h, persist=true) {
+    w = clamp(w, MIN, 1); h = clamp(h, MIN, 1);
+    x = clamp(x, 0, 1-w); y = clamp(y, 0, 1-h);
+    zone.x = x; zone.y = y; zone.w = w; zone.h = h;
+    setSlider('zx', x*100); setSlider('zy', y*100); setSlider('zw', w*100); setSlider('zh', h*100);
+    if (persist) save();
+  }
+  function zoneFromSliders() { setZone(val('zx')/100, val('zy')/100, val('zw')/100, val('zh')/100); }
+  ['zx','zy','zw','zh'].forEach(k => ctl[k].addEventListener('input', zoneFromSliders));
+  $('zCenter').onclick = () => setZone((1-zone.w)/2, (1-zone.h)/2, zone.w, zone.h);
+  $('zReset').onclick = () => setZone(DEFAULTS.zx/100, DEFAULTS.zy/100, DEFAULTS.zw/100, DEFAULTS.zh/100);
+  function zoneRect() { return { l: zone.x*PW, t: zone.y*PH, w: zone.w*PW, h: zone.h*PH }; }
+
+  // ---------- 모드 ----------
+  let mode = 'zone';           // 'zone' | 'pick'
+  let samples = [];            // 공 색 샘플 {h,s,v,fx,fy}
+  function setStatus(t, pick) { $('status').textContent = t; $('status').classList.toggle('pick', !!pick); }
+  function setMode(m) {
+    mode = m;
+    $('modeZone').classList.toggle('on', m==='zone'); $('modeZone').classList.toggle('sub', m!=='zone');
+    $('modePick').classList.toggle('on', m==='pick'); $('modePick').classList.toggle('sub', m!=='pick');
+    $('modeDone').style.display = m==='pick' ? '' : 'none';
+    if (m === 'pick') {
+      samples = [];
+      setStatus('화면 속 공을 탭하세요. 밝은 곳·그늘진 곳을 여러 번 탭할수록 정확해집니다. (0개)', true);
+    } else {
+      samples = [];
+      setStatus($('lock').checked ? '존이 잠겨 있습니다. (오른쪽 패널에서 잠금 해제)' : '존을 끌어 이동 · 점을 끌어 크기 조절 · 박스 밖을 끌면 새로 그림');
+    }
+    updateCanvasTouch();
+  }
+  function updateCanvasTouch() {
+    view.classList.toggle('free', mode==='zone' && $('lock').checked);
+  }
+  $('modeZone').onclick = () => setMode('zone');
+  $('modePick').onclick = () => setMode('pick');
+  $('modeDone').onclick = () => setMode('zone');
+  $('lock').addEventListener('change', () => { setMode(mode); save(); });
+  ['mirror','voice','beep'].forEach(k => $(k).addEventListener('change', save));
+
+  // ---------- 포인터 입력 (마우스/터치 공용) ----------
+  let drag = null;
+  const pt = e => { const r = view.getBoundingClientRect(); return { x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height, px:e.clientX-r.left, py:e.clientY-r.top, r }; };
+
+  function hitTest(p, touch) {
+    const r = p.r, L = zone.x*r.width, T = zone.y*r.height, R = (zone.x+zone.w)*r.width, B = (zone.y+zone.h)*r.height;
+    const cx = (L+R)/2, cy = (T+B)/2;
+    const hs = [[L,T,-1,-1],[R,T,1,-1],[L,B,-1,1],[R,B,1,1],[cx,T,0,-1],[cx,B,0,1],[L,cy,-1,0],[R,cy,1,0]];
+    const rad = touch ? 30 : 16;
+    let best = null, bd = 1e9;
+    for (const h of hs) { const d = Math.hypot(p.px-h[0], p.py-h[1]); if (d <= rad && d < bd) { bd = d; best = h; } }
+    if (best) return { type:'resize', sx:best[2], sy:best[3] };
+    if (p.px>=L && p.px<=R && p.py>=T && p.py<=B) return { type:'move' };
+    return { type:'draw' };
+  }
+
+  function cursorFor(h) {
+    if (!h) return '';
+    if (h.type==='move') return 'move';
+    if (h.type==='draw') return 'crosshair';
+    const k = h.sx*h.sy;
+    if (h.sx===0) return 'ns-resize'; if (h.sy===0) return 'ew-resize';
+    return k>0 ? 'nwse-resize' : 'nesw-resize';
+  }
+
+  function sampleAt(p) {
+    const x = Math.round(p.x*PW), y = Math.round(p.y*PH);
+    const x0 = clamp(x-2, 0, PW-5), y0 = clamp(y-2, 0, PH-5);
+    const d = pctx.getImageData(x0, y0, 5, 5).data;
+    let r=0,g=0,b=0,c=0;
+    for (let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; c++; }
+    const [h,s,v] = rgb2hsv(r/c, g/c, b/c);
+    return { h, s, v, fx:p.x, fy:p.y };
+  }
+
+  function applySamples() {
+    const S = samples.filter(s => s.s >= 0.2);
+    const skipped = samples.length - S.length;
+    if (!S.length) { setStatus('흰색·회색 부분이에요. 색이 선명한 부분을 탭하세요. (' + samples.length + '개)', true); return; }
+    let sx=0, sy=0;
+    S.forEach(s => { sx += Math.cos(s.h*Math.PI/180); sy += Math.sin(s.h*Math.PI/180); });
+    let hc = Math.atan2(sy, sx)*180/Math.PI; if (hc < 0) hc += 360;
+    let dev = 0; S.forEach(s => { dev = Math.max(dev, hueDiff(s.h, hc)); });
+    setSlider('hc', Math.round(hc));
+    setSlider('ht', clamp(Math.round(dev + 10), 12, 60));
+    setSlider('smin', clamp(Math.round(Math.min(...S.map(s=>s.s))*100*0.7), 15, 90));
+    setSlider('vmin', clamp(Math.round(Math.min(...S.map(s=>s.v))*100*0.65), 15, 90));
+    refreshColorUI(); save();
+    setStatus('샘플 ' + S.length + '개로 색을 지정했습니다' + (skipped ? ' (흰 반사광 ' + skipped + '개 제외)' : '') + '. 더 탭해서 보정하거나 [완료]를 누르세요.', true);
+  }
+
+  view.addEventListener('pointerdown', e => {
+    if (!stream) return;
+    const p = pt(e);
+    if (mode === 'pick') {
+      samples.push(sampleAt(p));
+      applySamples();
+      e.preventDefault();
+      return;
+    }
+    if ($('lock').checked) return;
+    const h = hitTest(p, e.pointerType === 'touch' || e.pointerType === 'pen');
+    drag = { ...h, p0:p, z0:{...zone} };
+    if (h.type === 'draw') { setZone(p.x, p.y, MIN, MIN, false); drag.ax = p.x; drag.ay = p.y; }
+    view.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  view.addEventListener('pointermove', e => {
+    const p = pt(e);
+    if (!drag) {
+      if (mode==='zone' && !$('lock').checked && stream) view.style.cursor = cursorFor(hitTest(p, false));
+      else view.style.cursor = mode==='pick' ? 'crosshair' : '';
+      return;
+    }
+    const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, z0 = drag.z0;
+    if (drag.type === 'move') {
+      setZone(z0.x+dx, z0.y+dy, z0.w, z0.h, false);
+    } else if (drag.type === 'resize') {
+      let L=z0.x, T=z0.y, R=z0.x+z0.w, B=z0.y+z0.h;
+      if (drag.sx < 0) L = clamp(L+dx, 0, R-MIN); else if (drag.sx > 0) R = clamp(R+dx, L+MIN, 1);
+      if (drag.sy < 0) T = clamp(T+dy, 0, B-MIN); else if (drag.sy > 0) B = clamp(B+dy, T+MIN, 1);
+      setZone(L, T, R-L, B-T, false);
+    } else {
+      const x = clamp(p.x,0,1), y = clamp(p.y,0,1);
+      setZone(Math.min(drag.ax,x), Math.min(drag.ay,y), Math.abs(x-drag.ax), Math.abs(y-drag.ay), false);
+    }
+  });
+  const endDrag = () => { if (drag) { drag = null; save(); } };
+  view.addEventListener('pointerup', endDrag);
+  view.addEventListener('pointercancel', endDrag);
+
+  // ---------- 카메라 ----------
+  async function openStream(deviceId) {
+    const base = { width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:60} };
+    const tries = deviceId
+      ? [{ ...base, deviceId:{exact:deviceId} }]
+      : [{ ...base, facingMode:'environment' }, true];
+    let lastErr;
+    for (const v of tries) {
+      try { return await navigator.mediaDevices.getUserMedia({ audio:false, video:v }); }
+      catch (e) { lastErr = e; if (e.name === 'NotAllowedError') break; }
+    }
+    throw lastErr;
+  }
+  async function startCamera(deviceId) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    try {
+      stream = await openStream(deviceId);
+    } catch (e) {
+      stream = null;
+      $('startMsg').style.display = 'flex';
+      $('startMsg').innerHTML = '<div>카메라를 사용할 수 없습니다.<br><small>' + e.name + ': ' + e.message +
+        '</small><br><br>주소창의 카메라 권한을 허용했는지 확인하세요.<br>(https 주소에서만 카메라를 쓸 수 있습니다)<br><button id="startBtn2">다시 시도</button></div>';
+      $('startBtn2').onclick = () => startCamera();
+      return;
+    }
+    video.srcObject = stream;
+    await video.play();
+    $('startMsg').style.display = 'none';
+    const vw = video.videoWidth, vh = video.videoHeight;
+    view.width = Math.min(vw, 960); view.height = Math.round(view.width * vh / vw);
+    PH = Math.round(PW * vh / vw); proc.width = PW; proc.height = PH;
+    mask = new Uint8Array(PW*PH); seen = new Uint8Array(PW*PH); stack = new Int32Array(PW*PH);
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const cur = stream.getVideoTracks()[0].getSettings().deviceId;
+      $('camSel').innerHTML = devs.map((d,i) => `<option value="${d.deviceId}" ${d.deviceId===cur?'selected':''}>${d.label || '카메라 '+(i+1)}</option>`).join('');
+    } catch(e){}
+    if (!running) { running = true; requestAnimationFrame(loop); }
+  }
+  $('startBtn').onclick = () => startCamera();
+  $('camSel').onchange = e => startCamera(e.target.value);
+
+  // ---------- 공 검출 ----------
+  function detect(data) {
+    const hc = val('hc'), ht = val('ht'), smin = val('smin')/100, vmin = val('vmin')/100;
+    const n = PW*PH;
+    for (let i=0, p=0; i<n; i++, p+=4) {
+      const r=data[p], g=data[p+1], b=data[p+2];
+      const mx = r>g ? (r>b?r:b) : (g>b?g:b);
+      const mn = r<g ? (r<b?r:b) : (g<b?g:b);
+      const d = mx-mn;
+      let ok = 0;
+      if (mx && d/mx >= smin && mx/255 >= vmin) {
+        let h;
+        if (mx===r) h = 60*(((g-b)/d)%6);
+        else if (mx===g) h = 60*((b-r)/d+2);
+        else h = 60*((r-g)/d+4);
+        if (h<0) h+=360;
+        let df = h - hc; if (df < 0) df = -df; if (df > 180) df = 360 - df;
+        ok = df <= ht ? 1 : 0;
+      }
+      mask[i] = ok;
+    }
+    seen.fill(0);
+    let best = null;
+    for (let i=0;i<n;i++) {
+      if (!mask[i] || seen[i]) continue;
+      let sp = 0; stack[sp++] = i; seen[i] = 1;
+      let area=0, sx=0, sy=0, x0=PW, x1=0, y0=PH, y1=0;
+      while (sp) {
+        const q = stack[--sp];
+        const x = q % PW, y = (q / PW) | 0;
+        area++; sx+=x; sy+=y;
+        if (x<x0) x0=x; if (x>x1) x1=x; if (y<y0) y0=y; if (y>y1) y1=y;
+        if (x>0    && mask[q-1] && !seen[q-1]) { seen[q-1]=1; stack[sp++]=q-1; }
+        if (x<PW-1 && mask[q+1] && !seen[q+1]) { seen[q+1]=1; stack[sp++]=q+1; }
+        if (y>0    && mask[q-PW] && !seen[q-PW]) { seen[q-PW]=1; stack[sp++]=q-PW; }
+        if (y<PH-1 && mask[q+PW] && !seen[q+PW]) { seen[q+PW]=1; stack[sp++]=q+PW; }
+      }
+      if (area < 6) continue;
+      const bw = x1-x0+1, bh = y1-y0+1, asp = bw/bh, fill = area/(bw*bh);
+      if (asp < 0.45 || asp > 2.2 || fill < 0.45) continue;   // 공처럼 둥근 덩어리만
+      if (!best || area > best.area) {
+        const r = (Math.sqrt(area/Math.PI) + (bw+bh)/4) / 2;
+        best = { x:sx/area, y:sy/area, r, area };
+      }
+    }
+    return best;
+  }
+
+  // ---------- 판정 / 카운트 ----------
+  const counts = { b:0, s:0, o:0 };
+  const pitches = [];
+  let banner = null;
+  let pitchNo = 0;
+
+  function isStrike(p) {
+    const z = zoneRect();
+    const dx = Math.max(z.l - p.x, 0, p.x - (z.l+z.w));
+    const dy = Math.max(z.t - p.y, 0, p.y - (z.t+z.h));
+    return Math.hypot(dx,dy) <= p.r;      // 공의 일부라도 존에 닿으면 스트라이크
+  }
+
+  function judge(p) {
+    const strike = isStrike(p);
+    const z = zoneRect();
+    pitchNo++;
+    let extra = '';
+    if (strike) {
+      counts.s++;
+      if (counts.s >= 3) { counts.o++; counts.s = 0; counts.b = 0; extra = ' (삼진 아웃)'; }
+    } else {
+      counts.b++;
+      if (counts.b >= 4) { counts.b = 0; counts.s = 0; extra = ' (볼넷)'; }
+    }
+    if (counts.o >= 3) { counts.o = 0; extra += ' · 3아웃 교대'; }
+    pitches.push({ u:(p.x-z.l)/z.w, v:(p.y-z.t)/z.h, ru:p.r/z.w, strike });
+    if (pitches.length > 30) pitches.shift();
+    banner = { text: strike ? 'STRIKE' : 'BALL', cls: strike?'strike':'ball', until: performance.now()+1800 };
+    $('lastCall').textContent = (strike ? '스트라이크' : '볼') + extra;
+    $('lastCall').className = 'last ' + (strike?'strike':'ball');
+    const line = document.createElement('div');
+    line.className = strike ? 's' : 'b';
+    line.textContent = `#${pitchNo}  ${strike?'스트라이크':'볼'}${extra}`;
+    $('log').prepend(line);
+    updateCountUI(); drawChart();
+    signal(strike);
+  }
+
+  function updateCountUI() {
+    $('cB').textContent = counts.b; $('cS').textContent = counts.s; $('cO').textContent = counts.o;
+  }
+
+  // ---------- 소리 ----------
+  let actx = null;
+  function tone(freq, dur, when=0) {
+    if (!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.value = freq; o.type = 'square';
+    g.gain.setValueAtTime(0.08, actx.currentTime+when);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+when+dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(actx.currentTime+when); o.stop(actx.currentTime+when+dur);
+  }
+  function signal(strike) {
+    if ($('beep').checked) {
+      if (strike) { tone(880,0.12); tone(880,0.12,0.16); } else { tone(330,0.3); }
+    }
+    if ($('voice').checked && 'speechSynthesis' in window) {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(strike ? '스트라이크!' : '볼!');
+      u.lang = 'ko-KR'; u.rate = 1.15;
+      speechSynthesis.speak(u);
+    }
+  }
+
+  // ---------- 추적기 ----------
+  const LOST_MAX = 6;
+  const track = { active:false, pts:[], lost:0, judged:false };
+
+  function moved(pts) {
+    if (pts.length < 3) return false;
+    const a = pts[0], b = pts[pts.length-1];
+    const dist = Math.hypot(b.x-a.x, b.y-a.y);
+    return dist > 0.04*PW || b.r/a.r > 1.3 || a.r/b.r > 1.3;
+  }
+
+  function updateTracker(blob) {
+    if (blob) {
+      if (!track.active) { track.active = true; track.pts = []; track.judged = false; }
+      track.lost = 0;
+      track.pts.push(blob);
+      if (track.pts.length > 120) track.pts.shift();
+      const trigR = val('trig')/100*PW;
+      if (!track.judged && blob.r >= trigR && moved(track.pts)) {
+        track.judged = true; judge(blob);
+      }
+    } else if (track.active) {
+      track.lost++;
+      if (track.lost > LOST_MAX) {
+        if (!track.judged && track.pts.length >= 4 && moved(track.pts)) {
+          judge(track.pts[track.pts.length-1]);
+        }
+        track.active = false; track.pts = [];
+      }
+    }
+  }
+
+  // ---------- 그리기 ----------
+  function drawOverlay(blob) {
+    const s = view.width / PW;
+    const z = zoneRect();
+    const editing = mode === 'zone' && !$('lock').checked;
+    // 스트라이크존
+    vctx.lineWidth = 3; vctx.strokeStyle = '#ff8a1f';
+    vctx.strokeRect(z.l*s, z.t*s, z.w*s, z.h*s);
+    vctx.lineWidth = 1; vctx.strokeStyle = 'rgba(255,138,31,.55)';
+    for (let i=1;i<3;i++){
+      vctx.beginPath(); vctx.moveTo((z.l+z.w*i/3)*s, z.t*s); vctx.lineTo((z.l+z.w*i/3)*s, (z.t+z.h)*s); vctx.stroke();
+      vctx.beginPath(); vctx.moveTo(z.l*s, (z.t+z.h*i/3)*s); vctx.lineTo((z.l+z.w)*s, (z.t+z.h*i/3)*s); vctx.stroke();
+    }
+    if (editing) {
+      const L=z.l*s, T=z.t*s, R=(z.l+z.w)*s, B=(z.t+z.h)*s, cx=(L+R)/2, cy=(T+B)/2;
+      const rr = Math.max(7, view.width/110);
+      vctx.fillStyle = '#ff8a1f'; vctx.strokeStyle = '#111'; vctx.lineWidth = 2;
+      [[L,T],[R,T],[L,B],[R,B],[cx,T],[cx,B],[L,cy],[R,cy]].forEach(([x,y]) => {
+        vctx.beginPath(); vctx.arc(x,y,rr,0,Math.PI*2); vctx.fill(); vctx.stroke();
+      });
+    }
+    // 궤적
+    const pts = track.pts;
+    for (let i=1;i<pts.length;i++){
+      vctx.strokeStyle = `rgba(255,255,255,${0.15 + 0.7*i/pts.length})`;
+      vctx.lineWidth = 2;
+      vctx.beginPath(); vctx.moveTo(pts[i-1].x*s, pts[i-1].y*s); vctx.lineTo(pts[i].x*s, pts[i].y*s); vctx.stroke();
+    }
+    // 공
+    if (blob) {
+      vctx.strokeStyle = '#00e5ff'; vctx.lineWidth = 3;
+      vctx.beginPath(); vctx.arc(blob.x*s, blob.y*s, Math.max(blob.r*s,4), 0, Math.PI*2); vctx.stroke();
+      vctx.fillStyle = '#00e5ff'; vctx.beginPath(); vctx.arc(blob.x*s, blob.y*s, 2.5, 0, Math.PI*2); vctx.fill();
+    }
+    // 색 찍기 샘플 표시
+    if (mode === 'pick') {
+      vctx.strokeStyle = '#00e5ff'; vctx.lineWidth = 2;
+      samples.forEach(sp => {
+        const x = sp.fx*view.width, y = sp.fy*view.height;
+        vctx.beginPath(); vctx.arc(x,y,9,0,Math.PI*2); vctx.stroke();
+        vctx.beginPath(); vctx.moveTo(x-14,y); vctx.lineTo(x+14,y); vctx.moveTo(x,y-14); vctx.lineTo(x,y+14); vctx.stroke();
+      });
+      vctx.fillStyle = 'rgba(0,229,255,.9)'; vctx.font = '700 16px sans-serif'; vctx.textAlign = 'left';
+      vctx.fillText('공 색 찍기 모드', 12, 24);
+    }
+    // 판정 크기 가이드
+    const tr = val('trig')/100*PW*s;
+    vctx.setLineDash([5,5]); vctx.strokeStyle = 'rgba(255,255,255,.35)'; vctx.lineWidth = 1;
+    vctx.beginPath(); vctx.arc(view.width-40, view.height-40, tr, 0, Math.PI*2); vctx.stroke();
+    vctx.setLineDash([]);
+    vctx.fillStyle = 'rgba(255,255,255,.6)'; vctx.font = '11px sans-serif'; vctx.textAlign='center';
+    vctx.fillText('판정 크기', view.width-40, view.height-40+tr+14);
+    // 배너
+    if (banner && performance.now() < banner.until) {
+      const col = banner.cls==='strike' ? '#ff4d4d' : '#3ddc84';
+      vctx.fillStyle = 'rgba(0,0,0,.55)';
+      vctx.fillRect(0, 14, view.width, 68);
+      vctx.fillStyle = col; vctx.font = '800 48px sans-serif'; vctx.textAlign = 'center';
+      vctx.fillText(banner.text, view.width/2, 66);
+    }
+  }
+
+  function drawMask() {
+    const img = vctx.createImageData(PW, PH);
+    for (let i=0;i<PW*PH;i++){
+      const v = mask[i] ? 255 : 0;
+      img.data[i*4]=v; img.data[i*4+1]=mask[i]?140:0; img.data[i*4+2]=0; img.data[i*4+3]=255;
+    }
+    const tmp = document.createElement('canvas'); tmp.width=PW; tmp.height=PH;
+    tmp.getContext('2d').putImageData(img,0,0);
+    vctx.imageSmoothingEnabled = false;
+    vctx.drawImage(tmp, 0, 0, view.width, view.height);
+    vctx.imageSmoothingEnabled = true;
+  }
+
+  function drawChart() {
+    const W = chart.width, H = chart.height;
+    cctx.clearRect(0,0,W,H);
+    const zw = 110, zh = 130, zl = (W-zw)/2, zt = (H-zh)/2;
+    cctx.strokeStyle = '#2a3240'; cctx.lineWidth = 1;
+    cctx.strokeRect(1,1,W-2,H-2);
+    cctx.strokeStyle = '#ff8a1f'; cctx.lineWidth = 2;
+    cctx.strokeRect(zl, zt, zw, zh);
+    cctx.lineWidth = 1; cctx.strokeStyle = 'rgba(255,138,31,.4)';
+    for (let i=1;i<3;i++){
+      cctx.beginPath(); cctx.moveTo(zl+zw*i/3, zt); cctx.lineTo(zl+zw*i/3, zt+zh); cctx.stroke();
+      cctx.beginPath(); cctx.moveTo(zl, zt+zh*i/3); cctx.lineTo(zl+zw, zt+zh*i/3); cctx.stroke();
+    }
+    pitches.forEach((p,i) => {
+      const x = zl + p.u*zw, y = zt + p.v*zh;
+      if (x < 4 || x > W-4 || y < 4 || y > H-4) return;
+      const r = Math.max(4, Math.min(14, p.ru*zw));
+      cctx.fillStyle = p.strike ? 'rgba(255,77,77,.75)' : 'rgba(61,220,132,.75)';
+      cctx.beginPath(); cctx.arc(x,y,r,0,Math.PI*2); cctx.fill();
+      cctx.strokeStyle = '#fff'; cctx.lineWidth = i===pitches.length-1 ? 2 : 0.5; cctx.stroke();
+    });
+  }
+
+  // ---------- 메인 루프 ----------
+  function loop() {
+    if (!running) return;
+    if (video.readyState >= 2) {
+      const mirror = $('mirror').checked;
+      pctx.save();
+      if (mirror) { pctx.translate(PW,0); pctx.scale(-1,1); }
+      pctx.drawImage(video, 0, 0, PW, PH);
+      pctx.restore();
+      vctx.save();
+      if (mirror) { vctx.translate(view.width,0); vctx.scale(-1,1); }
+      vctx.drawImage(video, 0, 0, view.width, view.height);
+      vctx.restore();
+
+      const data = pctx.getImageData(0,0,PW,PH).data;
+      const blob = detect(data);
+      updateTracker(blob);
+      if (debug) drawMask();
+      drawOverlay(blob);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- 버튼 ----------
+  $('resetBtn').onclick = () => {
+    counts.b = counts.s = counts.o = 0; pitches.length = 0; pitchNo = 0;
+    $('log').innerHTML = ''; $('lastCall').textContent = '—'; $('lastCall').className = 'last';
+    updateCountUI(); drawChart();
+  };
+  $('debugBtn').onclick = () => { debug = !debug; $('debugBtn').textContent = debug ? '카메라 보기' : '마스크 보기'; };
+  $('factory').onclick = () => {
+    try { localStorage.removeItem(KEY); } catch(e) {}
+    Object.keys(DEFAULTS).forEach(k => setSlider(k, DEFAULTS[k]));
+    $('lock').checked = false; $('mirror').checked = false; $('voice').checked = true; $('beep').checked = true;
+    zoneFromSliders(); refreshColorUI(); setMode('zone');
+  };
+
+  // ---------- 초기화 ----------
+  Object.keys(DEFAULTS).forEach(k => setSlider(k, DEFAULTS[k]));
+  load();
+  zone.x = val('zx')/100; zone.y = val('zy')/100; zone.w = val('zw')/100; zone.h = val('zh')/100;
+  setZone(zone.x, zone.y, zone.w, zone.h, false);
+  refreshColorUI();
+  setMode('zone');
+  drawChart();
+})();
+</script>
+</body>
+</html>
