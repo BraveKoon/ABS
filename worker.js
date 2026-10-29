@@ -7,7 +7,7 @@ const HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ABS 로봇 심판 v0.1</title>
+<title>ABS 로봇 심판 v0.1.1</title>
 <style>
   :root{
     color-scheme:dark; --bg:#0e1116; --panel:#171c24; --line:#2a3240; --text:#e8edf4; --muted:#8a96a8;
@@ -32,9 +32,11 @@ const HTML = `<!DOCTYPE html>
   button:hover{filter:brightness(1.1)}
   h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;letter-spacing:.04em}
   .count{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
-  .count div{background:#10151c;border:1px solid var(--line);border-radius:10px;padding:8px 4px}
+  .count > div{background:#10151c;border:1px solid var(--line);border-radius:10px;padding:8px 4px}
   .count b{display:block;font-size:28px;line-height:1.1}
   .count small{color:var(--muted);font-size:12px}
+  .adj{display:flex;gap:6px;justify-content:center;margin-top:6px}
+  .adj button{min-width:38px;min-height:40px;padding:2px 0;font-size:18px;line-height:1}
   .last{margin-top:10px;text-align:center;font-size:26px;font-weight:800;min-height:38px}
   .last.strike{color:var(--strike)} .last.ball{color:var(--ball)}
   .row{display:grid;grid-template-columns:84px 1fr 48px;align-items:center;gap:8px;margin:8px 0;font-size:13px}
@@ -73,7 +75,7 @@ const HTML = `<!DOCTYPE html>
 <body>
 <header>
   <h1>⚾ ABS 로봇 심판</h1>
-  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다 · v0.1</span>
+  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다 · v0.1.1</span>
 </header>
 
 <div class="wrap">
@@ -93,12 +95,15 @@ const HTML = `<!DOCTYPE html>
     <div class="modebar">
       <button id="modeZone" class="on">🎯 존 조정</button>
       <button id="modePick" class="sub">🎨 공 색 찍기</button>
+      <button id="modeCrop" class="sub">✂️ 크롭</button>
       <button id="modeDone" class="sub" style="display:none">완료</button>
+      <button id="cropOff" class="sub" style="display:none">전체 화면</button>
       <div class="status" id="status"></div>
     </div>
     <div class="hint">
       <b>존 조정</b>: 주황 박스를 끌어 이동 · 모서리/변의 점을 끌어 크기 변경 · 박스 밖을 드래그하면 새로 그림.<br>
       <b>공 색 찍기</b>: 화면 속 공을 탭(밝은 곳·그늘진 곳 여러 번 탭할수록 정확). 오른쪽 패널에서 색을 직접 고를 수도 있습니다.<br>
+      <b>크롭</b>: 남길 영역을 정하고 [적용]하면 그 부분만 확대해서 추적합니다. 공이 멀리서 작게 보일 때 정확해집니다. [전체 화면]으로 되돌립니다.<br>
       공이 카메라 쪽으로 다가오며 커지다가 <b>판정 크기</b>에 닿는 순간 그 위치로 판정합니다(존에 조금이라도 걸치면 스트라이크).
     </div>
   </div>
@@ -107,9 +112,9 @@ const HTML = `<!DOCTYPE html>
     <div class="panel">
       <h2>카운트</h2>
       <div class="count">
-        <div><b id="cB">0</b><small>볼</small></div>
-        <div><b id="cS">0</b><small>스트라이크</small></div>
-        <div><b id="cO">0</b><small>아웃</small></div>
+        <div><b id="cB">0</b><small>볼</small><div class="adj"><button class="sub" data-k="b" data-d="-1" aria-label="-1">−</button><button class="sub" data-k="b" data-d="1" aria-label="+1">＋</button></div></div>
+        <div><b id="cS">0</b><small>스트라이크</small><div class="adj"><button class="sub" data-k="s" data-d="-1" aria-label="-1">−</button><button class="sub" data-k="s" data-d="1" aria-label="+1">＋</button></div></div>
+        <div><b id="cO">0</b><small>아웃</small><div class="adj"><button class="sub" data-k="o" data-d="-1" aria-label="-1">−</button><button class="sub" data-k="o" data-d="1" aria-label="+1">＋</button></div></div>
       </div>
       <div class="last" id="lastCall">—</div>
       <div class="btns" style="margin-top:8px">
@@ -183,6 +188,12 @@ const HTML = `<!DOCTYPE html>
   let PH = 240, stream = null, debug = false, running = false, live = false, fileMode = false, fileUrl = null;
   let mask = null, seen = null, stack = null;
   const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+  // 크롭: 원본(반전 전) 영상 기준 비율. draft 는 편집 중인 화면(반전 후) 기준 비율.
+  const crop = { x:.15, y:.15, w:.7, h:.7 };
+  const draft = { x:.15, y:.15, w:.7, h:.7 };
+  let cropActive = false;
+  const CROP_MIN = 0.1;
+  const mir = () => $('mirror').checked;
 
   // ---------- 기본값 (사진 속 주황 탁구공: 색상 ≈27°, 채도 65~100%, 밝기 80~95%) ----------
   const DEFAULTS = { hc:27, ht:12, smin:55, vmin:45, trig:4, zx:35, zy:28, zw:30, zh:42 };
@@ -206,6 +217,7 @@ const HTML = `<!DOCTYPE html>
       const o = {};
       Object.keys(ctl).forEach(k => o[k] = val(k));
       CHECKS.forEach(k => o[k] = $(k).checked);
+      o.crop = { x:crop.x, y:crop.y, w:crop.w, h:crop.h, on:cropActive };
       localStorage.setItem(KEY, JSON.stringify(o));
     } catch(e) {}
   }
@@ -215,6 +227,12 @@ const HTML = `<!DOCTYPE html>
       if (!o) return;
       Object.keys(ctl).forEach(k => { if (typeof o[k] === 'number') setSlider(k, o[k]); });
       CHECKS.forEach(k => { if (typeof o[k] === 'boolean') $(k).checked = o[k]; });
+      const c = o.crop;
+      if (c && [c.x,c.y,c.w,c.h].every(v => typeof v === 'number' && isFinite(v))) {
+        const w = clamp(c.w, CROP_MIN, 1), h = clamp(c.h, CROP_MIN, 1);
+        Object.assign(crop, { x:clamp(c.x, 0, 1-w), y:clamp(c.y, 0, 1-h), w, h });
+        cropActive = !!c.on;
+      }
     } catch(e) {}
   }
 
@@ -304,18 +322,27 @@ const HTML = `<!DOCTYPE html>
   let samples = [];            // 공 색 샘플 {h,s,v,fx,fy}
   function setStatus(t, pick) { $('status').textContent = t; $('status').classList.toggle('pick', !!pick); }
   function setMode(m) {
+    const prev = mode;
     mode = m;
-    $('modeZone').classList.toggle('on', m==='zone'); $('modeZone').classList.toggle('sub', m!=='zone');
-    $('modePick').classList.toggle('on', m==='pick'); $('modePick').classList.toggle('sub', m!=='pick');
-    $('modeDone').style.display = m==='pick' ? '' : 'none';
+    ['Zone','Pick','Crop'].forEach(n => {
+      const on = m === n.toLowerCase();
+      $('mode'+n).classList.toggle('on', on); $('mode'+n).classList.toggle('sub', !on);
+    });
+    $('modeDone').style.display = (m==='pick' || m==='crop') ? '' : 'none';
+    $('modeDone').textContent = m==='crop' ? '적용' : '완료';
+    $('cropOff').style.display = (cropActive && m!=='crop') ? '' : 'none';
     if (m === 'pick' && fileMode) video.pause();
-    if (m === 'pick') {
-      samples = [];
+    samples = [];
+    if (m === 'crop') {
+      const c = cropActive ? crop : { x:.15, y:.15, w:.7, h:.7 };
+      Object.assign(draft, { x:(cropActive && mir()) ? 1-(c.x+c.w) : c.x, y:c.y, w:c.w, h:c.h });
+      setStatus('남길 영역을 정하세요. 끌어서 이동 · 점으로 크기 조절 · 박스 밖을 끌면 새로 그림. 끝나면 [적용], 취소는 [존 조정].', true);
+    } else if (m === 'pick') {
       setStatus('화면 속 공을 탭하세요. 밝은 곳·그늘진 곳을 여러 번 탭할수록 정확해집니다. (0개)', true);
     } else {
-      samples = [];
       setStatus($('lock').checked ? '존이 잠겨 있습니다. (오른쪽 패널에서 잠금 해제)' : '존을 끌어 이동 · 점을 끌어 크기 조절 · 박스 밖을 끌면 새로 그림');
     }
+    if (live && (prev === 'crop') !== (m === 'crop')) applyLayout();
     updateCanvasTouch();
   }
   function updateCanvasTouch() {
@@ -323,16 +350,41 @@ const HTML = `<!DOCTYPE html>
   }
   $('modeZone').onclick = () => setMode('zone');
   $('modePick').onclick = () => setMode('pick');
-  $('modeDone').onclick = () => setMode('zone');
+  $('modeDone').onclick = () => {
+    const wasCrop = mode === 'crop';
+    if (wasCrop) {
+      Object.assign(crop, { x: mir() ? 1-(draft.x+draft.w) : draft.x, y:draft.y, w:draft.w, h:draft.h });
+      cropActive = !(crop.w > 0.98 && crop.h > 0.98);
+      save();
+    }
+    setMode('zone');
+    if (wasCrop) setStatus(cropActive ? '크롭이 적용되었습니다 (원본의 ' + Math.round(crop.w*crop.h*100) + '%). 존을 다시 맞춰 주세요.' : '전체 화면입니다.');
+  };
+  $('modeCrop').onclick = () => setMode('crop');
+  $('cropOff').onclick = () => {
+    cropActive = false; save(); applyLayout(); $('cropOff').style.display = 'none';
+    setStatus('전체 화면으로 되돌렸습니다.');
+  };
   $('lock').addEventListener('change', () => { setMode(mode); save(); });
   ['mirror','voice','beep'].forEach(k => $(k).addEventListener('change', save));
+  $('mirror').addEventListener('change', () => {
+    if (mode === 'crop') draft.x = 1 - (draft.x + draft.w);
+    track.active = false; track.pts = [];   // 화면이 뒤집히며 공 위치가 바뀌어도 자동 판정이 들어가지 않게
+  });
 
   // ---------- 포인터 입력 (마우스/터치 공용) ----------
   let drag = null;
   const pt = e => { const r = view.getBoundingClientRect(); return { x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height, px:e.clientX-r.left, py:e.clientY-r.top, r }; };
 
+  const tgt = () => mode === 'crop' ? draft : zone;
+  const minSize = () => mode === 'crop' ? CROP_MIN : MIN;
+  function setTgt(x, y, w, h, persist) {
+    if (mode !== 'crop') { setZone(x, y, w, h, persist); return; }
+    w = clamp(w, CROP_MIN, 1); h = clamp(h, CROP_MIN, 1);
+    Object.assign(draft, { x:clamp(x, 0, 1-w), y:clamp(y, 0, 1-h), w, h });
+  }
   function hitTest(p, touch) {
-    const r = p.r, L = zone.x*r.width, T = zone.y*r.height, R = (zone.x+zone.w)*r.width, B = (zone.y+zone.h)*r.height;
+    const z = tgt(), r = p.r, L = z.x*r.width, T = z.y*r.height, R = (z.x+z.w)*r.width, B = (z.y+z.h)*r.height;
     const cx = (L+R)/2, cy = (T+B)/2;
     const hs = [[L,T,-1,-1],[R,T,1,-1],[L,B,-1,1],[R,B,1,1],[cx,T,0,-1],[cx,B,0,1],[L,cy,-1,0],[R,cy,1,0]];
     const rad = touch ? 30 : 16;
@@ -387,10 +439,10 @@ const HTML = `<!DOCTYPE html>
       e.preventDefault();
       return;
     }
-    if ($('lock').checked) return;
+    if (mode === 'zone' && $('lock').checked) return;
     const h = hitTest(p, e.pointerType === 'touch' || e.pointerType === 'pen');
-    drag = { ...h, p0:p, z0:{...zone} };
-    if (h.type === 'draw') { setZone(p.x, p.y, MIN, MIN, false); drag.ax = p.x; drag.ay = p.y; }
+    drag = { ...h, p0:p, z0:{...tgt()} };
+    if (h.type === 'draw') { setTgt(p.x, p.y, minSize(), minSize(), false); drag.ax = p.x; drag.ay = p.y; }
     view.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
@@ -398,21 +450,22 @@ const HTML = `<!DOCTYPE html>
   view.addEventListener('pointermove', e => {
     const p = pt(e);
     if (!drag) {
-      if (mode==='zone' && !$('lock').checked && live) view.style.cursor = cursorFor(hitTest(p, false));
+      if ((mode==='crop' || (mode==='zone' && !$('lock').checked)) && live) view.style.cursor = cursorFor(hitTest(p, false));
       else view.style.cursor = mode==='pick' ? 'crosshair' : '';
       return;
     }
     const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, z0 = drag.z0;
     if (drag.type === 'move') {
-      setZone(z0.x+dx, z0.y+dy, z0.w, z0.h, false);
+      setTgt(z0.x+dx, z0.y+dy, z0.w, z0.h, false);
     } else if (drag.type === 'resize') {
       let L=z0.x, T=z0.y, R=z0.x+z0.w, B=z0.y+z0.h;
-      if (drag.sx < 0) L = clamp(L+dx, 0, R-MIN); else if (drag.sx > 0) R = clamp(R+dx, L+MIN, 1);
-      if (drag.sy < 0) T = clamp(T+dy, 0, B-MIN); else if (drag.sy > 0) B = clamp(B+dy, T+MIN, 1);
-      setZone(L, T, R-L, B-T, false);
+      const m = minSize();
+      if (drag.sx < 0) L = clamp(L+dx, 0, R-m); else if (drag.sx > 0) R = clamp(R+dx, L+m, 1);
+      if (drag.sy < 0) T = clamp(T+dy, 0, B-m); else if (drag.sy > 0) B = clamp(B+dy, T+m, 1);
+      setTgt(L, T, R-L, B-T, false);
     } else {
       const x = clamp(p.x,0,1), y = clamp(p.y,0,1);
-      setZone(Math.min(drag.ax,x), Math.min(drag.ay,y), Math.abs(x-drag.ax), Math.abs(y-drag.ay), false);
+      setTgt(Math.min(drag.ax,x), Math.min(drag.ay,y), Math.abs(x-drag.ax), Math.abs(y-drag.ay), false);
     }
   });
   const endDrag = () => { if (drag) { drag = null; save(); } };
@@ -432,13 +485,24 @@ const HTML = `<!DOCTYPE html>
     }
     throw lastErr;
   }
-  function sizeFromVideo() {
+  // 화면에 보여줄 원본 영상 영역 (크롭 편집 중에는 전체)
+  function srcRect() {
     const vw = video.videoWidth, vh = video.videoHeight;
-    view.width = Math.min(vw, 960); view.height = Math.round(view.width * vh / vw);
-    PH = Math.round(PW * vh / vw); proc.width = PW; proc.height = PH;
+    if (cropActive && mode !== 'crop') return { x:crop.x*vw, y:crop.y*vh, w:crop.w*vw, h:crop.h*vh };
+    return { x:0, y:0, w:vw, h:vh };
+  }
+  function applyLayout() {
+    if (!video.videoWidth) return;
+    const r = srcRect();
+    view.width = Math.max(32, Math.min(Math.round(r.w), 960)); view.height = Math.max(32, Math.round(view.width * r.h / r.w));
+    PH = Math.max(16, Math.round(PW * r.h / r.w)); proc.width = PW; proc.height = PH;
     mask = new Uint8Array(PW*PH); seen = new Uint8Array(PW*PH); stack = new Int32Array(PW*PH);
+    track.active = false; track.pts = [];
+  }
+  function sizeFromVideo() {
     $('startMsg').style.display = 'none';
     live = true;
+    applyLayout();
     if (!running) { running = true; requestAnimationFrame(loop); }
   }
   function showFileUI(on) { $('playBtn').style.display = on ? '' : 'none'; $('speedRow').style.display = on ? '' : 'none'; }
@@ -556,19 +620,44 @@ const HTML = `<!DOCTYPE html>
     return Math.hypot(dx,dy) <= p.r;      // 공의 일부라도 존에 닿으면 스트라이크
   }
 
+  // 카운트 +1 (삼진·볼넷·3아웃 교대 포함). 설명 문구를 돌려준다.
+  function addCount(kind) {
+    let extra = '';
+    if (kind === 's') {
+      counts.s++;
+      if (counts.s >= 3) { counts.o++; counts.s = 0; counts.b = 0; extra = ' (삼진 아웃)'; }
+    } else if (kind === 'b') {
+      counts.b++;
+      if (counts.b >= 4) { counts.b = 0; counts.s = 0; extra = ' (볼넷)'; }
+    } else {
+      counts.o++;
+    }
+    if (counts.o >= 3) { counts.o = 0; extra += ' · 3아웃 교대'; }
+    return extra;
+  }
+
+  // 수동 카운트 조정 (+ 는 자동 판정과 같은 규칙, − 는 0 아래로 내려가지 않음)
+  function manual(kind, d) {
+    const name = { b:'볼', s:'스트라이크', o:'아웃' }[kind];
+    let extra = '';
+    if (d > 0) extra = addCount(kind); else counts[kind] = Math.max(0, counts[kind] - 1);
+    updateCountUI();
+    const line = document.createElement('div');
+    line.className = kind === 's' ? 's' : kind === 'b' ? 'b' : '';
+    line.textContent = '수동 ' + name + (d > 0 ? ' +1' : ' −1') + extra;
+    $('log').prepend(line);
+    if (d > 0 && kind !== 'o') {
+      $('lastCall').textContent = '(수동) ' + name + extra;
+      $('lastCall').className = 'last ' + (kind === 's' ? 'strike' : 'ball');
+    }
+  }
+  document.querySelectorAll('.adj button').forEach(b => { b.onclick = () => manual(b.dataset.k, +b.dataset.d); });
+
   function judge(p) {
     const strike = isStrike(p);
     const z = zoneRect();
     pitchNo++;
-    let extra = '';
-    if (strike) {
-      counts.s++;
-      if (counts.s >= 3) { counts.o++; counts.s = 0; counts.b = 0; extra = ' (삼진 아웃)'; }
-    } else {
-      counts.b++;
-      if (counts.b >= 4) { counts.b = 0; counts.s = 0; extra = ' (볼넷)'; }
-    }
-    if (counts.o >= 3) { counts.o = 0; extra += ' · 3아웃 교대'; }
+    const extra = addCount(strike ? 's' : 'b');
     pitches.push({ u:(p.x-z.l)/z.w, v:(p.y-z.t)/z.h, ru:p.r/z.w, strike });
     if (pitches.length > 30) pitches.shift();
     banner = { text: strike ? 'STRIKE' : 'BALL', cls: strike?'strike':'ball', until: performance.now()+1800 };
@@ -642,7 +731,23 @@ const HTML = `<!DOCTYPE html>
   }
 
   // ---------- 그리기 ----------
+  function drawCropEditor() {
+    const W = view.width, H = view.height;
+    const L = draft.x*W, T = draft.y*H, R = (draft.x+draft.w)*W, B = (draft.y+draft.h)*H, cx = (L+R)/2, cy = (T+B)/2;
+    vctx.fillStyle = 'rgba(0,0,0,.6)';
+    vctx.fillRect(0, 0, W, T); vctx.fillRect(0, B, W, H-B); vctx.fillRect(0, T, L, B-T); vctx.fillRect(R, T, W-R, B-T);
+    vctx.strokeStyle = '#00e5ff'; vctx.lineWidth = 3; vctx.strokeRect(L, T, R-L, B-T);
+    const rr = Math.max(7, W/110);
+    vctx.fillStyle = '#00e5ff'; vctx.strokeStyle = '#111'; vctx.lineWidth = 2;
+    [[L,T],[R,T],[L,B],[R,B],[cx,T],[cx,B],[L,cy],[R,cy]].forEach(([x,y]) => {
+      vctx.beginPath(); vctx.arc(x,y,rr,0,Math.PI*2); vctx.fill(); vctx.stroke();
+    });
+    vctx.fillStyle = '#00e5ff'; vctx.font = '700 16px sans-serif'; vctx.textAlign = 'left';
+    vctx.fillText('크롭 영역 (' + Math.round(draft.w*100) + '% × ' + Math.round(draft.h*100) + '%)', 12, 24);
+  }
+
   function drawOverlay(blob) {
+    if (mode === 'crop') { drawCropEditor(); return; }
     const s = view.width / PW;
     const z = zoneRect();
     const editing = mode === 'zone' && !$('lock').checked;
@@ -744,18 +849,19 @@ const HTML = `<!DOCTYPE html>
     if (!running) return;
     if (video.readyState >= 2) {
       const mirror = $('mirror').checked;
+      const sr = srcRect();
       pctx.save();
       if (mirror) { pctx.translate(PW,0); pctx.scale(-1,1); }
-      pctx.drawImage(video, 0, 0, PW, PH);
+      pctx.drawImage(video, sr.x, sr.y, sr.w, sr.h, 0, 0, PW, PH);
       pctx.restore();
       vctx.save();
       if (mirror) { vctx.translate(view.width,0); vctx.scale(-1,1); }
-      vctx.drawImage(video, 0, 0, view.width, view.height);
+      vctx.drawImage(video, sr.x, sr.y, sr.w, sr.h, 0, 0, view.width, view.height);
       vctx.restore();
 
       const data = pctx.getImageData(0,0,PW,PH).data;
       const blob = detect(data);
-      updateTracker(blob);
+      if (mode !== 'crop') updateTracker(blob);
       if (debug) drawMask();
       drawOverlay(blob);
     }
@@ -773,6 +879,7 @@ const HTML = `<!DOCTYPE html>
     try { localStorage.removeItem(KEY); } catch(e) {}
     Object.keys(DEFAULTS).forEach(k => setSlider(k, DEFAULTS[k]));
     $('lock').checked = false; $('mirror').checked = false; $('voice').checked = true; $('beep').checked = true;
+    cropActive = false; applyLayout();
     zoneFromSliders(); refreshColorUI(); setMode('zone');
   };
 
