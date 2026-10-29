@@ -7,7 +7,7 @@ const HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ABS 로봇 심판 v0.1.1</title>
+<title>ABS 로봇 심판 v0.1.2</title>
 <style>
   :root{
     color-scheme:dark; --bg:#0e1116; --panel:#171c24; --line:#2a3240; --text:#e8edf4; --muted:#8a96a8;
@@ -75,7 +75,7 @@ const HTML = `<!DOCTYPE html>
 <body>
 <header>
   <h1>⚾ ABS 로봇 심판</h1>
-  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다 · v0.1.1</span>
+  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다 · v0.1.2</span>
 </header>
 
 <div class="wrap">
