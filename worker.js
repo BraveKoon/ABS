@@ -7,7 +7,7 @@ const HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ABS 로봇 심판 v0.1.2</title>
+<title>ABS 로봇 심판 v0.1.3</title>
 <style>
   :root{
     color-scheme:dark; --bg:#0e1116; --panel:#171c24; --line:#2a3240; --text:#e8edf4; --muted:#8a96a8;
@@ -75,7 +75,7 @@ const HTML = `<!DOCTYPE html>
 <body>
 <header>
   <h1>⚾ ABS 로봇 심판</h1>
-  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다 · v0.1.2</span>
+  <span>탁구공을 카메라로 추적해 스트라이크 / 볼을 자동 판정합니다 · v0.1.3</span>
 </header>
 
 <div class="wrap">
@@ -118,6 +118,7 @@ const HTML = `<!DOCTYPE html>
       </div>
       <div class="last" id="lastCall">—</div>
       <div class="btns" style="margin-top:8px">
+        <button class="sub" id="pauseBtn">⏸ 판정 일시정지</button>
         <button class="sub" id="resetBtn">카운트 초기화</button>
         <button class="sub" id="debugBtn">마스크 보기</button>
       </div>
@@ -185,7 +186,7 @@ const HTML = `<!DOCTYPE html>
   video.playsInline = true; video.muted = true;
 
   const PW = 320;           // 처리용 가로 해상도
-  let PH = 240, stream = null, debug = false, running = false, live = false, fileMode = false, fileUrl = null;
+  let PH = 240, stream = null, debug = false, running = false, live = false, fileMode = false, fileUrl = null, judgePaused = false;
   let mask = null, seen = null, stack = null;
   const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
   // 크롭: 원본(반전 전) 영상 기준 비율. draft 는 편집 중인 화면(반전 후) 기준 비율.
@@ -861,7 +862,8 @@ const HTML = `<!DOCTYPE html>
 
       const data = pctx.getImageData(0,0,PW,PH).data;
       const blob = detect(data);
-      if (mode !== 'crop') updateTracker(blob);
+      if (judgePaused) { track.active = false; track.pts = []; }
+      else if (mode !== 'crop') updateTracker(blob);
       if (debug) drawMask();
       drawOverlay(blob);
     }
@@ -869,6 +871,12 @@ const HTML = `<!DOCTYPE html>
   }
 
   // ---------- 버튼 ----------
+  $('pauseBtn').onclick = () => {
+    judgePaused = !judgePaused;
+    $('pauseBtn').textContent = judgePaused ? '▶ 판정 시작' : '⏸ 판정 일시정지';
+    $('pauseBtn').classList.toggle('on', judgePaused);
+    setStatus(judgePaused ? '판정 일시정지 중입니다. 화면은 계속 보이지만 공을 판정하지 않습니다.' : '');
+  };
   $('resetBtn').onclick = () => {
     counts.b = counts.s = counts.o = 0; pitches.length = 0; pitchNo = 0;
     $('log').innerHTML = ''; $('lastCall').textContent = '—'; $('lastCall').className = 'last';
