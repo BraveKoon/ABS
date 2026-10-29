@@ -1,16 +1,13 @@
 name: Release
 
-# 태그(v*)를 푸시하면 릴리즈가 자동으로 만들어집니다:  git tag v0.1 && git push origin v0.1
-# Actions 탭에서 수동 실행(Run workflow)해도 됩니다.
 on:
   push:
-    tags: ["v*"]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: "릴리즈 태그 (예: v0.1)"
+        description: Release tag (e.g. v0.1.2)
         required: true
-        default: "v0.1"
 
 permissions:
   contents: write
@@ -18,30 +15,39 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Package
-        env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      - name: Skip if release exists
+        id: check
         run: |
-          set -euo pipefail
-          NAME="abs-referee-${TAG}"
-          mkdir -p "dist/${NAME}"
-          cp index.html worker.js wrangler.toml README.md CHANGELOG.md "dist/${NAME}/"
-          (cd dist && zip -r "${NAME}.zip" "${NAME}")
-          # CHANGELOG.md 에서 해당 버전 섹션만 릴리즈 노트로 사용
-          awk -v t="## ${TAG}" '($0 == t || index($0, t " ") == 1) {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md || true
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      - name: Build zip
+        if: steps.check.outputs.exists != 'true'
         run: |
-          set -euo pipefail
-          if [ -s notes.md ]; then NOTES=(--notes-file notes.md); else NOTES=(--generate-notes); fi
-          gh release create "${TAG}" \
-            "dist/abs-referee-${TAG}.zip" index.html worker.js \
-            --title "ABS 로봇 심판 ${TAG}" \
-            --target "${GITHUB_SHA}" \
-            "${NOTES[@]}"
+          name="abs-referee-${TAG}"
+          mkdir "$name"
+          cp README.md CHANGELOG.md index.html worker.js wrangler.toml "$name/"
+          zip -r "${name}.zip" "$name"
+
+      - name: Extract release notes
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          awk -v t="## ${TAG}" '
+            index($0, t) == 1 && (length($0) == length(t) || substr($0, length(t) + 1, 1) == " ") {f=1; next}
+            /^## / {f=0}
+            f' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "No CHANGELOG entry for $TAG"; exit 1; }
+
+      - name: Create release
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          gh release create "$TAG" "abs-referee-${TAG}.zip" \
+            --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
