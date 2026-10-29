@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. v0.1)
+        required: true
+        default: v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build zip
+        run: |
+          name="abs-referee-${TAG}"
+          mkdir "$name"
+          cp README.md CHANGELOG.md index.html worker.js wrangler.toml "$name/"
+          zip -r "${name}.zip" "$name"
+
+      - name: Extract release notes
+        run: |
+          awk -v t="## ${TAG}" 'index($0, t) == 1 {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+
+      - name: Create release
+        run: |
+          gh release create "$TAG" "abs-referee-${TAG}.zip" \
+            --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
